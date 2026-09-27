@@ -1,6 +1,6 @@
 {
     "name": "superagent",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Claude Code terminallerini tek pencerede grid halinde çalıştırır",
     "main": "dist/electron/main.js",
     "scripts": {
