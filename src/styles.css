@@ -130,6 +130,13 @@ button { font: inherit; color: inherit; }
 }
 .pane .overlay button:hover { border-color: var(--accent); }
 
+.pane.dropping { border-color: var(--accent); box-shadow: 0 0 0 2px #7c9cff55; }
+.pane.dropping::after {
+  content: 'Dosyayı bırak — yolu Claude\'a eklenir';
+  position: absolute; inset: 28px 0 0 0; display: flex; align-items: center; justify-content: center;
+  background: #0b0d10b3; color: #c3cdfa; font-size: 13px; pointer-events: none;
+}
+
 .pane.flash { animation: flash 1.2s ease-out; }
 
 .empty {

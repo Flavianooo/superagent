@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const api = {
   pty: {
@@ -21,6 +21,8 @@ const api = {
   home: (): Promise<string> => ipcRenderer.invoke('home'),
   dirExists: (p: string): Promise<boolean> => ipcRenderer.invoke('dir:exists', p),
   notify: (title: string, body: string) => ipcRenderer.send('notify', title, body),
+  // contextIsolation açıkken File.path yok; sürüklenen dosyanın disk yolunu buradan alırız.
+  pathForFile: (f: File): string => webUtils.getPathForFile(f),
 };
 
 contextBridge.exposeInMainWorld('api', api);

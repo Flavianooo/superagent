@@ -100,14 +100,6 @@ export class Pane {
     });
     this.term.loadAddon(this.fit);
     this.term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri)));
-    this.term.open(this.body);
-    try {
-      const gl = new WebglAddon();
-      gl.onContextLoss(() => gl.dispose());
-      this.term.loadAddon(gl);
-    } catch {
-      /* WebGL yoksa DOM renderer ile devam */
-    }
 
     this.term.onData((d) => window.api.pty.write(this.id, d));
     this.term.onTitleChange((t) => {
@@ -115,13 +107,32 @@ export class Pane {
       this.renderHeader();
     });
     this.term.attachCustomKeyEventHandler((e) => this.handleKey(e));
-    this.term.textarea?.addEventListener('focus', () => this.events.onFocus(this));
 
     this.el.addEventListener('mousedown', () => this.events.onFocus(this));
     this.body.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (this.term.hasSelection()) this.copySelection();
       else this.paste();
+    });
+
+    // Dosya sürükle-bırak: Windows Terminal gibi yolu yapıştırır; Claude görsel/PDF yollarını eke çevirir.
+    this.el.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      this.el.classList.add('dropping');
+    });
+    this.el.addEventListener('dragleave', (e) => {
+      if (!this.el.contains(e.relatedTarget as Node)) this.el.classList.remove('dropping');
+    });
+    this.el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      this.el.classList.remove('dropping');
+      const paths = [...(e.dataTransfer?.files ?? [])].map((f) => window.api.pathForFile(f)).filter(Boolean);
+      if (!paths.length) return;
+      this.term.paste(paths.map((p) => (/\s/.test(p) ? `"${p}"` : p)).join(' ') + ' ');
+      this.events.onFocus(this);
+      this.term.focus();
     });
 
     const header = this.el.querySelector('header')!;
@@ -143,6 +154,7 @@ export class Pane {
 
   /** DOM'a eklendikten sonra çağrılır: terminali boyutlandırıp PTY'yi başlatır. */
   start(s: SpawnSettings): void {
+    this.mount();
     this.spawnSettings = s;
     this.started = true;
     this.fitNow();
@@ -155,6 +167,24 @@ export class Pane {
       rows: this.term.rows,
       ...s,
     });
+  }
+
+  private mounted = false;
+
+  // xterm'i ve WebGL renderer'ı ancak pane DOM'a eklendikten sonra açıyoruz;
+  // bağlı olmayan bir elemanda açılırsa WebGL tuvali boş kalabiliyor.
+  private mount(): void {
+    if (this.mounted) return;
+    this.mounted = true;
+    this.term.open(this.body);
+    this.term.textarea?.addEventListener('focus', () => this.events.onFocus(this));
+    try {
+      const gl = new WebglAddon();
+      gl.onContextLoss(() => gl.dispose());
+      this.term.loadAddon(gl);
+    } catch {
+      /* WebGL yoksa DOM renderer ile devam */
+    }
   }
 
   restart(s?: SpawnSettings): void {
@@ -208,7 +238,7 @@ export class Pane {
   }
 
   private fitNow(): void {
-    if (this.body.clientWidth < 20 || this.body.clientHeight < 20) return; // gizli pane
+    if (!this.mounted || this.body.clientWidth < 20 || this.body.clientHeight < 20) return; // gizli pane
     const { cols, rows } = this.term;
     try {
       this.fit.fit();

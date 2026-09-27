@@ -299,6 +299,9 @@ document.addEventListener('mousedown', (e) => {
   if (!t.closest('.menu') && !t.closest('#btn-new') && !t.closest('#btn-settings') && !t.closest('.empty')) closeMenus();
 });
 
+// Pane dışına bırakılan dosya pencereyi o dosyaya yönlendirmesin.
+for (const ev of ['dragover', 'drop'] as const) document.addEventListener(ev, (e) => e.preventDefault());
+
 // Capture fazında dinleniyor: xterm tuşları yutmadan önce uygulama kısayolları yakalanır.
 window.addEventListener(
   'keydown',
