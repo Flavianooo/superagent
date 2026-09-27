@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>SuperAgent</title>
+    <link rel="stylesheet" href="main.css" />
+  </head>
+  <body>
+    <div id="topbar">
+      <div class="brand"><span class="logo"></span>SuperAgent</div>
+      <div id="layouts"></div>
+      <button id="btn-new" class="tb">+ Yeni</button>
+      <div id="summary"></div>
+      <div class="spacer"></div>
+      <button id="btn-settings" class="tb" title="Ayarlar">⚙</button>
+    </div>
+    <main id="grid"></main>
+    <div id="new-menu" class="menu" hidden></div>
+    <div id="settings-menu" class="menu settings" hidden></div>
+    <script src="main.js"></script>
+  </body>
+</html>
