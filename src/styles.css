@@ -234,3 +234,23 @@ button { font: inherit; color: inherit; }
 }
 @keyframes blink { 50% { opacity: .35; } }
 @keyframes flash { 0% { box-shadow: 0 0 0 2px var(--working); } 100% { box-shadow: 0 0 0 2px transparent; } }
+
+/* pane ayar menüsü (sesli uyarılar) */
+.pane .bell { flex: none; font-size: 11px; line-height: 1; }
+.pane .bell:empty { display: none; }
+.pane .menu {
+  display: none; position: absolute; top: 30px; right: 8px; z-index: 20;
+  min-width: 220px; padding: 8px; border: 1px solid var(--border-hi); border-radius: 8px;
+  background: var(--header); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-ui); font-size: 12px; color: var(--text);
+}
+.pane .menu.show { display: block; }
+.pane .menu label { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 4px; cursor: pointer; }
+.pane .menu label:hover { background: #1b2028; }
+.pane .menu input { accent-color: var(--accent); margin: 0; }
+.pane .menu-row { display: flex; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.pane .menu-row button {
+  flex: 1; height: 24px; border: 1px solid var(--border-hi); border-radius: 4px;
+  background: transparent; color: var(--muted); font: inherit; cursor: pointer;
+}
+.pane .menu-row button:hover { color: var(--text); background: #1b2028; }

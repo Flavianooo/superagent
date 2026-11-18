@@ -15,6 +15,7 @@ Requires Windows 10/11 and the `claude` command on your PATH ([Claude Code](http
 - **Grid layouts:** single, 2 side by side, 2 stacked, 3 (1 large + 2), 2×2, 3×2, 4×2
 - **Status tracking:** each pane shows 🟢 working · 🟠 waiting for approval · ⚪ ready · 🔴 exited, reported by Claude Code hooks (with on-screen detection as a fallback). Click a summary chip in the top bar to jump to the next pane in that state
 - **Notifications:** when the window is in the background, you get a Windows notification and a taskbar flash as soon as a session finishes or asks for approval; clicking the notification focuses that pane
+- **Per-pane sound alerts:** the ⚙ button on a pane header turns on a chime for that pane only, when its task finishes and/or when it waits for approval (a 🔔 shows in the header); the choice is remembered across restarts
 - **Session restore:** your layout and terminals come back on next launch, and every pane resumes its own Claude session (tracked per pane, never shared)
 - **Reopen closed panes:** a closed pane can be reopened with its session from the New menu or `Ctrl+Shift+Z`
 - **Git at a glance:** each pane header shows the branch and the number of uncommitted changes

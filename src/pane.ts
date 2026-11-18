@@ -2,9 +2,16 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { chime } from './sound';
 import { atShellPrompt, detect, hookStatus, STATUS_LABEL, type Status } from './status';
 import type { HookEvent } from '../electron/hooks';
 import type { GitInfo } from '../electron/git';
+
+/** Bu pane için sesli uyarılar. */
+export interface SoundPrefs {
+  done: boolean;
+  waiting: boolean;
+}
 
 export interface SearchHit {
   line: number;
@@ -74,6 +81,8 @@ export class Pane {
   private hook: { status: Status; at: number } | null = null;
   private disagreeSince = 0;
   git: GitInfo | null = null;
+  sound: SoundPrefs = { done: false, waiting: false };
+  private menu: HTMLElement;
   private gitTimer: number;
 
   constructor(
@@ -96,14 +105,22 @@ export class Pane {
         <span class="git"></span>
         <span class="ttl"></span>
         <span class="st"></span>
+        <span class="bell" title="Sesli uyarı açık"></span>
+        <button class="b-menu" title="Pane ayarları">⚙</button>
         <button class="b-restart" title="Yeniden başlat">⟳</button>
         <button class="b-max" title="Büyüt / küçült (Ctrl+Shift+Enter)">⤢</button>
         <button class="b-close" title="Kapat (Ctrl+Shift+W)">✕</button>
       </header>
       <div class="body"></div>
+      <div class="menu">
+        <label><input type="checkbox" data-sound="done"> Görev bitince ses çal</label>
+        <label><input type="checkbox" data-sound="waiting"> Onay beklerken ses çal</label>
+        <div class="menu-row"><button data-test="done">▶ Bitiş sesi</button><button data-test="waiting">▶ Onay sesi</button></div>
+      </div>
       <div class="overlay"><div>Oturum kapandı</div><button>Yeniden başlat</button></div>`;
     this.body = this.el.querySelector('.body')!;
     this.overlay = this.el.querySelector('.overlay')!;
+    this.menu = this.el.querySelector('.menu')!;
     this.renderHeader();
 
     this.term = new Terminal({
@@ -162,12 +179,49 @@ export class Pane {
     this.el.querySelector('.b-max')!.addEventListener('click', () => this.events.onMaximize(this));
     this.el.querySelector('.b-restart')!.addEventListener('click', () => this.restart());
     this.overlay.querySelector('button')!.addEventListener('click', () => this.restart());
+    this.el.querySelector('.b-menu')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleMenu();
+    });
+    this.menu.addEventListener('mousedown', (e) => e.stopPropagation());
+    this.menu.querySelectorAll<HTMLInputElement>('input[data-sound]').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        this.sound = { ...this.sound, [cb.dataset.sound!]: cb.checked };
+        this.renderHeader();
+        this.events.onChange();
+      }),
+    );
+    this.menu.querySelectorAll<HTMLButtonElement>('button[data-test]').forEach((b) =>
+      b.addEventListener('click', () => chime(b.dataset.test as 'done' | 'waiting')),
+    );
 
     this.ro = new ResizeObserver(() => this.queueFit());
     this.ro.observe(this.body);
     this.poll = window.setInterval(() => this.checkStatus(), 400);
     this.gitTimer = window.setInterval(() => this.refreshGit(), 10000);
     void this.refreshGit();
+  }
+
+  setSound(prefs: SoundPrefs | undefined): void {
+    this.sound = { done: !!prefs?.done, waiting: !!prefs?.waiting };
+    this.renderHeader();
+  }
+
+  toggleMenu(open = !this.menu.classList.contains('show')): void {
+    if (!open) {
+      this.menu.classList.remove('show');
+      return;
+    }
+    this.menu.querySelectorAll<HTMLInputElement>('input[data-sound]').forEach((cb) => {
+      cb.checked = this.sound[cb.dataset.sound as keyof SoundPrefs];
+    });
+    this.menu.classList.add('show');
+    const close = (e: MouseEvent) => {
+      if (this.menu.contains(e.target as Node)) return;
+      this.menu.classList.remove('show');
+      document.removeEventListener('mousedown', close, true);
+    };
+    document.addEventListener('mousedown', close, true);
   }
 
   async refreshGit(): Promise<void> {
@@ -421,6 +475,8 @@ export class Pane {
       void this.el.offsetWidth;
       this.el.classList.add('flash');
     }
+    if (next === 'waiting' && this.sound.waiting) chime('waiting');
+    else if (prev === 'working' && next === 'idle' && this.sound.done) chime('done');
     this.events.onStatus(this, prev, next);
   }
 
@@ -440,5 +496,8 @@ export class Pane {
     const noise = !t || t === 'Claude Code' || /\.exe$|^[A-Za-z]:\\|^Administrator:|^Yönetici:/i.test(t);
     q('.ttl')!.textContent = noise ? '' : t;
     q('.st')!.textContent = STATUS_LABEL[this.status];
+    const on = [this.sound.done && 'bitince', this.sound.waiting && 'onay beklerken'].filter(Boolean);
+    q('.bell')!.textContent = on.length ? '🔔' : '';
+    q('.bell')!.title = on.length ? `Sesli uyarı: ${on.join(' ve ')}` : '';
   }
 }

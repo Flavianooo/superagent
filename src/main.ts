@@ -1,6 +1,6 @@
 import '@xterm/xterm/css/xterm.css';
 import './styles.css';
-import { Pane, type SearchHit, type SpawnSettings } from './pane';
+import { Pane, type SearchHit, type SoundPrefs, type SpawnSettings } from './pane';
 import { LAYOUTS, layoutById, layoutFor, layoutIcon, type Layout } from './layouts';
 import type { Status } from './status';
 
@@ -14,6 +14,7 @@ interface PaneEntry {
   name: string;
   cwd: string;
   key: string;
+  sound?: SoundPrefs;
 }
 
 interface Template {
@@ -87,7 +88,7 @@ function save(): void {
   saveTimer = window.setTimeout(() => {
     const s: SavedState = {
       layout: layout.id,
-      panes: panes.map((p) => ({ name: p.name, cwd: p.cwd, key: p.key })),
+      panes: panes.map((p) => ({ name: p.name, cwd: p.cwd, key: p.key, sound: p.sound })),
       recent,
       closed,
       templates,
@@ -150,6 +151,7 @@ interface AddOptions {
   key?: string;
   /** Sürdürülecek claude oturumu. */
   resume?: string | null;
+  sound?: SoundPrefs;
   /** Kullanıcı açtıysa odakla ve son klasörlere ekle; açılışta geri yüklemede değil. */
   interactive?: boolean;
 }
@@ -163,6 +165,7 @@ function addPane(cwd: string, o: AddOptions = {}): Pane | null {
     onChange: save,
     onStatus,
   });
+  p.setSound(o.sound);
   byId.set(p.id, p);
   panes.push(p);
   layout = layoutFor(panes.length, layout);
@@ -184,7 +187,7 @@ function closePane(p: Pane): void {
   byId.delete(p.id);
   p.dispose();
   // Oturum kaydı hemen silinmez: Ctrl+Shift+Z ile geri açılabilsin.
-  closed = [{ name: p.name, cwd: p.cwd, key: p.key }, ...closed];
+  closed = [{ name: p.name, cwd: p.cwd, key: p.key, sound: p.sound }, ...closed];
   for (const old of closed.splice(MAX_CLOSED)) window.api.session.forget(old.key);
   if (maximized === p) maximized = null;
   if (focused === p) focused = panes[Math.min(i, panes.length - 1)] ?? null;
@@ -199,7 +202,7 @@ async function reopenClosed(entry: PaneEntry | undefined = closed[0]): Promise<v
   closed = closed.filter((c) => c !== entry);
   const cwd = (await window.api.dirExists(entry.cwd)) ? entry.cwd : home;
   const resume = await window.api.session.get({ key: entry.key, cwd });
-  addPane(cwd, { name: entry.name, key: entry.key, resume, interactive: true });
+  addPane(cwd, { name: entry.name, key: entry.key, resume, sound: entry.sound, interactive: true });
 }
 
 function setFocus(p: Pane, focusTerm = true): void {
@@ -661,6 +664,7 @@ window.addEventListener(
         name: p.name,
         cwd: (await window.api.dirExists(p.cwd)) ? p.cwd : home,
         key: p.key ?? crypto.randomUUID(),
+        sound: p.sound,
       })),
     );
     // Her pane'in kendi oturum kimliği; iki pane asla aynı oturumu almaz.
@@ -668,7 +672,7 @@ window.addEventListener(
       saved.map(({ key, cwd }) => ({ key, cwd })),
       closed.map((c) => c.key),
     );
-    saved.forEach((p, i) => addPane(p.cwd, { name: p.name, key: p.key, resume: settings.continueOnRestore ? resumes[i] : null }));
+    saved.forEach((p, i) => addPane(p.cwd, { name: p.name, key: p.key, sound: p.sound, resume: settings.continueOnRestore ? resumes[i] : null }));
   }
   render();
   if (panes[0]) setFocus(panes[0]);
