@@ -2,7 +2,9 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell } f
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PtyManager, type CreateOptions } from './ptyManager';
-import { forgetSession, resolveSessions, type PaneRef } from './sessions';
+import { forgetSession, isSessionId, resolveSessions, sessionFor, writeSession, type PaneRef } from './sessions';
+import { startHookServer } from './hooks';
+import { gitInfo, addWorktree } from './git';
 
 let win: BrowserWindow | null = null;
 const statePath = () => path.join(app.getPath('userData'), 'state.json');
@@ -60,8 +62,11 @@ ipcMain.on('pty:create', (_e, o: CreateOptions) => {
 ipcMain.on('pty:write', (_e, id: string, data: string) => ptys.write(id, data));
 ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => ptys.resize(id, cols, rows));
 ipcMain.on('pty:kill', (_e, id: string) => ptys.kill(id));
-ipcMain.handle('session:resolve', (_e, panes: PaneRef[]) => resolveSessions(panes));
+ipcMain.handle('session:resolve', (_e, panes: PaneRef[], keep: string[]) => resolveSessions(panes, keep));
+ipcMain.handle('session:get', (_e, p: PaneRef) => sessionFor(p));
 ipcMain.on('session:forget', (_e, key: string) => forgetSession(key));
+ipcMain.handle('git:info', (_e, cwd: string) => gitInfo(cwd));
+ipcMain.handle('git:worktree', (_e, root: string, name: string) => addWorktree(root, name));
 
 ipcMain.handle('dialog:pickFolder', async () => {
   if (!win) return null;
@@ -101,7 +106,7 @@ ipcMain.handle('dir:exists', (_e, p: string) => {
 });
 
 // Pencere odakta değilken bir session bittiğinde / onay istediğinde haber ver.
-ipcMain.on('notify', (_e, title: string, body: string) => {
+ipcMain.on('notify', (_e, title: string, body: string, paneKey?: string) => {
   if (!win || win.isFocused()) return;
   win.flashFrame(true);
   if (Notification.isSupported()) {
@@ -109,13 +114,24 @@ ipcMain.on('notify', (_e, title: string, body: string) => {
     n.on('click', () => {
       win?.show();
       win?.focus();
+      if (paneKey) win?.webContents.send('pane:focus', paneKey);
     });
     n.show();
   }
 });
 
+// Geliştirirken gerçek kayıtlı pane'lere dokunmadan ayrı bir veri klasörüyle çalıştırmak için.
+if (process.env.SUPERAGENT_USER_DATA) app.setPath('userData', process.env.SUPERAGENT_USER_DATA);
 app.setAppUserModelId('dev.superagent');
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  // Hook sunucusu pencereden önce: ilk pane'lerin claude'u da durum olaylarını gönderebilsin.
+  await startHookServer((e) => {
+    // Oturum kimliği her olayla gelir; /clear sonrası SessionStart hook'u kaçsa bile kayıt güncel kalır.
+    if (isSessionId(e.sessionId)) writeSession(e.key, e.sessionId);
+    win?.webContents.send('pane:hook', e);
+  });
+  createWindow();
+});
 app.on('window-all-closed', () => {
   ptys.killAll();
   app.quit();

@@ -2,7 +2,15 @@ import { Terminal, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { detect, STATUS_LABEL, type Status } from './status';
+import { atShellPrompt, detect, hookStatus, STATUS_LABEL, type Status } from './status';
+import type { HookEvent } from '../electron/hooks';
+import type { GitInfo } from '../electron/git';
+
+export interface SearchHit {
+  line: number;
+  col: number;
+  text: string;
+}
 
 export const THEME: ITheme = {
   background: '#101317',
@@ -62,6 +70,11 @@ export class Pane {
   private ro: ResizeObserver;
   private fitQueued = false;
   private started = false;
+  /** Claude hook'larından gelen son durum; gelmediyse ekran metnine bakılır. */
+  private hook: { status: Status; at: number } | null = null;
+  private disagreeSince = 0;
+  git: GitInfo | null = null;
+  private gitTimer: number;
 
   constructor(
     public name: string,
@@ -80,6 +93,7 @@ export class Pane {
         <span class="idx"></span>
         <span class="name" title="Yeniden adlandırmak için çift tıkla"></span>
         <span class="cwd"></span>
+        <span class="git"></span>
         <span class="ttl"></span>
         <span class="st"></span>
         <button class="b-restart" title="Yeniden başlat">⟳</button>
@@ -152,6 +166,46 @@ export class Pane {
     this.ro = new ResizeObserver(() => this.queueFit());
     this.ro.observe(this.body);
     this.poll = window.setInterval(() => this.checkStatus(), 400);
+    this.gitTimer = window.setInterval(() => this.refreshGit(), 10000);
+    void this.refreshGit();
+  }
+
+  async refreshGit(): Promise<void> {
+    const g = await window.api.git.info(this.cwd);
+    if (JSON.stringify(g) === JSON.stringify(this.git)) return;
+    this.git = g;
+    this.renderHeader();
+  }
+
+  onHook(e: HookEvent): void {
+    const s = hookStatus(e.event, e.notificationType, e.toolName);
+    if (!s || this.status === 'exited') return;
+    this.hook = { status: s, at: Date.now() };
+    this.disagreeSince = 0;
+    // Araç bitince dosyalar değişmiş olabilir.
+    if (e.event === 'Stop' || e.event === 'PostToolUse') void this.refreshGit();
+  }
+
+  /** Kaydırma geçmişi dahil tüm satırlarda arar (büyük/küçük harf duyarsız). */
+  search(query: string, limit: number): SearchHit[] {
+    const q = query.toLowerCase();
+    const buf = this.term.buffer.active;
+    const hits: SearchHit[] = [];
+    for (let y = buf.length - 1; y >= 0 && hits.length < limit; y--) {
+      const text = buf.getLine(y)?.translateToString(true) ?? '';
+      const col = text.toLowerCase().indexOf(q);
+      if (col >= 0) hits.push({ line: y, col, text });
+    }
+    return hits;
+  }
+
+  /** Arama sonucuna kaydırıp eşleşmeyi seçili gösterir. */
+  reveal(hit: SearchHit, length: number): void {
+    this.queueFit();
+    requestAnimationFrame(() => {
+      this.term.scrollToLine(Math.max(0, hit.line - Math.floor(this.term.rows / 2)));
+      this.term.select(hit.col, hit.line, length);
+    });
   }
 
   private spawnSettings: SpawnSettings | null = null;
@@ -198,6 +252,7 @@ export class Pane {
     window.api.pty.kill(this.id);
     this.term.reset();
     this.title = '';
+    this.hook = null;
     this.start({ ...settings, resume: null });
     this.term.focus();
   }
@@ -227,6 +282,7 @@ export class Pane {
 
   dispose(): void {
     clearInterval(this.poll);
+    clearInterval(this.gitTimer);
     this.ro.disconnect();
     window.api.pty.kill(this.id);
     this.term.dispose();
@@ -325,7 +381,7 @@ export class Pane {
   private checkStatus(): void {
     if (this.status === 'exited' || !this.started) return;
     const now = Date.now();
-    const s = detect(this.screenText(), this.title);
+    const s = this.currentStatus(now);
     if (s !== this.candidate) {
       this.candidate = s;
       this.candidateSince = now;
@@ -333,6 +389,25 @@ export class Pane {
     // "Hazır"a geçişi biraz geciktir: spinner kareleri arasındaki anlık boşluklar yanlış bildirim üretmesin.
     const hold = s === 'idle' ? 1500 : 300;
     if (this.candidate !== this.status && now - this.candidateSince >= hold) this.setStatus(this.candidate);
+  }
+
+  private currentStatus(now: number): Status {
+    const screen = this.screenText();
+    const fromScreen = detect(screen, this.title);
+    const h = this.hook;
+    if (!h) return fromScreen;
+    if (atShellPrompt(screen)) {
+      this.hook = null; // claude kapandı; yeniden açılırsa yeni olaylar gelir
+      return 'idle';
+    }
+    if (h.status === fromScreen) {
+      this.disagreeSince = 0;
+      return h.status;
+    }
+    // Hook esas kaynak; ama Esc ile kesme ya da reddedilen izinden sonra olay gelmeyebilir.
+    // Ekran uzun süre aksini gösteriyorsa ona dön.
+    if (!this.disagreeSince) this.disagreeSince = now;
+    return now - Math.max(this.disagreeSince, h.at) < 10000 ? h.status : fromScreen;
   }
 
   private setStatus(next: Status): void {
@@ -356,6 +431,10 @@ export class Pane {
     const home = this.cwd.replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
     q('.cwd')!.innerHTML = esc(home);
     q('.cwd')!.title = this.cwd;
+    const g = this.git;
+    const gitEl = q('.git')!;
+    gitEl.innerHTML = g ? `⎇ ${esc(g.branch)}${g.changes ? ` <b>· ${g.changes}</b>` : ''}` : '';
+    gitEl.title = g ? `${g.branch} dalı · ${g.changes ? `${g.changes} kaydedilmemiş değişiklik` : 'değişiklik yok'}` : '';
     const t = this.title.replace(/^[⠀-⣿·✢✶✻✽✺✳*]\s*/, '');
     // Kabuğun kendi başlığı (ör. powershell.exe yolu) gürültü; sadece Claude'un görev başlığını göster.
     const noise = !t || t === 'Claude Code' || /\.exe$|^[A-Za-z]:\\|^Administrator:|^Yönetici:/i.test(t);

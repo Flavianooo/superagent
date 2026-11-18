@@ -11,13 +11,20 @@
       <div class="brand"><span class="logo"></span>SuperAgent</div>
       <div id="layouts"></div>
       <button id="btn-new" class="tb">+ Yeni</button>
+      <button id="btn-ws" class="tb" title="Çalışma alanları: pane düzenini kaydet / aç">▤ Alanlar</button>
       <div id="summary"></div>
       <div class="spacer"></div>
+      <button id="btn-search" class="tb" title="Tüm pane'lerde ara (Ctrl+Shift+F)">⌕</button>
       <button id="btn-settings" class="tb" title="Ayarlar">⚙</button>
     </div>
     <main id="grid"></main>
     <div id="new-menu" class="menu" hidden></div>
     <div id="settings-menu" class="menu settings" hidden></div>
+    <div id="ws-menu" class="menu ws" hidden></div>
+    <div id="search" hidden>
+      <input type="text" placeholder="Tüm pane'lerde ara…" spellcheck="false" />
+      <div class="results"></div>
+    </div>
     <script src="main.js"></script>
   </body>
 </html>

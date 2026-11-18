@@ -1,4 +1,5 @@
 import * as pty from '@lydell/node-pty';
+import { hookUrl } from './hooks';
 import { ensureHookSettings, isSessionId, newSessionId, sessionFile, writeSession } from './sessions';
 
 export type Shell = 'powershell' | 'pwsh' | 'cmd';
@@ -117,13 +118,15 @@ function sessionArgs(o: CreateOptions, env: Record<string, string>): string[] {
   const file = o.paneKey ? sessionFile(o.paneKey) : null;
   if (!file) return [];
   env.SUPERAGENT_SESSION_FILE = file;
-  if (!o.autoClaude || USER_PICKS_SESSION.test(o.claudeArgs)) return [];
+  env.SUPERAGENT_PANE = o.paneKey!;
+  if (!o.autoClaude) return [];
   let settings: string;
   try {
-    settings = ensureHookSettings();
+    settings = ensureHookSettings(hookUrl());
   } catch {
     return [];
   }
+  if (USER_PICKS_SESSION.test(o.claudeArgs)) return ['--settings', settings];
   const resume = isSessionId(o.resume) ? o.resume : null;
   const id = resume ?? newSessionId();
   writeSession(o.paneKey!, id);

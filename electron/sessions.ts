@@ -34,18 +34,31 @@ try {
 exit 0
 `;
 
-/** Hook betiğini ve claude'a --settings ile verilecek dosyayı yazar; settings dosyasının yolunu döner. */
-export function ensureHookSettings(): string {
+// Durum olayları: istem gönderildi / araç çalışıyor → çalışıyor, izin istendi → onay bekliyor, bitti → hazır.
+const STATUS_EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Notification', 'Stop'];
+
+/**
+ * Hook betiğini ve claude'a --settings ile verilecek dosyayı yazar; settings dosyasının yolunu döner.
+ * SessionStart (oturum kimliği) komut hook'u; durum olayları uygulamanın yerel HTTP sunucusuna gider.
+ */
+export function ensureHookSettings(statusUrl: string | null): string {
   const dir = root();
   fs.mkdirSync(sessionsDir(), { recursive: true });
   const ps1 = path.join(dir, 'session-hook.ps1');
   const settings = path.join(dir, 'settings.json');
   const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${ps1.replace(/\\/g, '/')}"`;
-  const json = JSON.stringify(
-    { hooks: { SessionStart: [{ hooks: [{ type: 'command', command, timeout: 15 }] }] } },
-    null,
-    2,
-  );
+  const hooks: Record<string, unknown[]> = { SessionStart: [{ hooks: [{ type: 'command', command, timeout: 15 }] }] };
+  if (statusUrl) {
+    const http = {
+      type: 'http',
+      url: statusUrl,
+      timeout: 5,
+      headers: { 'X-SuperAgent-Pane': '$SUPERAGENT_PANE' },
+      allowedEnvVars: ['SUPERAGENT_PANE'],
+    };
+    for (const e of STATUS_EVENTS) hooks[e] = [{ hooks: [http] }];
+  }
+  const json = JSON.stringify({ hooks }, null, 2);
   writeIfChanged(ps1, HOOK_PS1);
   writeIfChanged(settings, json);
   return settings;
@@ -109,7 +122,7 @@ function recentSessions(cwd: string): string[] {
  * Açılışta her pane için sürdürülecek oturum kimliğini bulur (yoksa null → yeni oturum).
  * İki pane asla aynı oturumu almaz. Anahtarı listede olmayan eski kayıtlar silinir.
  */
-export function resolveSessions(panes: PaneRef[]): (string | null)[] {
+export function resolveSessions(panes: PaneRef[], keepKeys: string[] = []): (string | null)[] {
   const taken = new Set<string>();
   const result = panes.map((p) => {
     const id = readSession(p.key);
@@ -128,13 +141,19 @@ export function resolveSessions(panes: PaneRef[]): (string | null)[] {
     result[i] = id;
   });
 
-  const keep = new Set(panes.map((p) => p.key));
+  const keep = new Set([...panes.map((p) => p.key), ...keepKeys]);
   try {
     for (const f of fs.readdirSync(sessionsDir())) if (!keep.has(f)) fs.rmSync(path.join(sessionsDir(), f), { force: true });
   } catch {
     /* yoksay */
   }
   return result;
+}
+
+/** Kapatılmış bir pane'i geri açarken: kayıtlı oturumu hâlâ duruyorsa kimliği. */
+export function sessionFor(p: PaneRef): string | null {
+  const id = readSession(p.key);
+  return id && fs.existsSync(transcript(p.cwd, id)) ? id : null;
 }
 
 export const newSessionId = () => randomUUID();

@@ -45,7 +45,7 @@
         "nsis": {
             "oneClick": true,
             "perMachine": false,
-            "artifactName": "SuperAgent-Setup-${version}.exe",
+            "artifactName": "SuperAgent-Setup.exe",
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
             "shortcutName": "SuperAgent"
