@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, shell } f
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { PtyManager, type CreateOptions } from './ptyManager';
+import { forgetSession, resolveSessions, type PaneRef } from './sessions';
 
 let win: BrowserWindow | null = null;
 const statePath = () => path.join(app.getPath('userData'), 'state.json');
@@ -59,6 +60,8 @@ ipcMain.on('pty:create', (_e, o: CreateOptions) => {
 ipcMain.on('pty:write', (_e, id: string, data: string) => ptys.write(id, data));
 ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => ptys.resize(id, cols, rows));
 ipcMain.on('pty:kill', (_e, id: string) => ptys.kill(id));
+ipcMain.handle('session:resolve', (_e, panes: PaneRef[]) => resolveSessions(panes));
+ipcMain.on('session:forget', (_e, key: string) => forgetSession(key));
 
 ipcMain.handle('dialog:pickFolder', async () => {
   if (!win) return null;
@@ -111,7 +114,7 @@ ipcMain.on('notify', (_e, title: string, body: string) => {
   }
 });
 
-app.setAppUserModelId('SuperAgent');
+app.setAppUserModelId('dev.superagent');
 app.whenReady().then(createWindow);
 app.on('window-all-closed', () => {
   ptys.killAll();

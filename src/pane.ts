@@ -32,6 +32,8 @@ export interface SpawnSettings {
   shell: 'powershell' | 'pwsh' | 'cmd';
   autoClaude: boolean;
   claudeArgs: string;
+  /** Sürdürülecek claude oturum kimliği; yoksa yeni oturum. */
+  resume?: string | null;
 }
 
 export interface PaneEvents {
@@ -64,6 +66,8 @@ export class Pane {
   constructor(
     public name: string,
     public cwd: string,
+    /** Kalıcı pane anahtarı: claude oturum kimliği uygulama kapanıp açılınca bununla bulunur. */
+    readonly key: string,
     fontSize: number,
     private events: PaneEvents,
   ) {
@@ -162,6 +166,7 @@ export class Pane {
     this.overlay.classList.remove('show');
     window.api.pty.create({
       id: this.id,
+      paneKey: this.key,
       cwd: this.cwd,
       cols: this.term.cols,
       rows: this.term.rows,
@@ -193,7 +198,7 @@ export class Pane {
     window.api.pty.kill(this.id);
     this.term.reset();
     this.title = '';
-    this.start({ ...settings, claudeArgs: settings.claudeArgs.replace(/\s*--continue\b/, '') });
+    this.start({ ...settings, resume: null });
     this.term.focus();
   }
 

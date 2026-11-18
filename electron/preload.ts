@@ -13,6 +13,12 @@ const api = {
       ipcRenderer.on('pty:exit', (_e, id, code) => fn(id, code));
     },
   },
+  session: {
+    // Açılışta her pane için sürdürülecek claude oturumu (yoksa null).
+    resolve: (panes: { key: string; cwd: string }[]): Promise<(string | null)[]> =>
+      ipcRenderer.invoke('session:resolve', panes),
+    forget: (key: string) => ipcRenderer.send('session:forget', key),
+  },
   pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
   loadState: (): Promise<unknown> => ipcRenderer.invoke('state:load'),
   saveState: (s: unknown) => ipcRenderer.send('state:save', s),

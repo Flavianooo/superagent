@@ -1,4 +1,5 @@
 import * as pty from '@lydell/node-pty';
+import { ensureHookSettings, isSessionId, newSessionId, sessionFile, writeSession } from './sessions';
 
 export type Shell = 'powershell' | 'pwsh' | 'cmd';
 
@@ -10,6 +11,10 @@ export interface CreateOptions {
   shell: Shell;
   autoClaude: boolean;
   claudeArgs: string;
+  /** Pane'in kalıcı anahtarı; oturum kimliği bu anahtarla saklanır. */
+  paneKey?: string;
+  /** Sürdürülecek claude oturumu; yoksa yeni bir oturum açılır. */
+  resume?: string | null;
 }
 
 type DataFn = (id: string, data: string) => void;
@@ -27,8 +32,8 @@ export class PtyManager {
 
   create(o: CreateOptions): void {
     this.kill(o.id);
-    const { file, args } = shellCommand(o);
     const env = cleanEnv();
+    const { file, args } = shellCommand(o, sessionArgs(o, env));
     const p = pty.spawn(file, args, {
       name: 'xterm-256color',
       cwd: o.cwd,
@@ -104,8 +109,34 @@ function cleanEnv(): Record<string, string> {
   return env;
 }
 
-function shellCommand(o: CreateOptions): { file: string; args: string[] } {
-  const claude = ['claude', o.claudeArgs.trim()].filter(Boolean).join(' ');
+// Kullanıcı argümanlarında oturum seçimi zaten varsa ona karışma.
+const USER_PICKS_SESSION = /(^|\s)(-c|--continue|-r|--resume|--session-id)(\s|=|$)/;
+
+/** Pane'e özgü oturum argümanları: --resume <id> ya da --session-id <yeni id>, artı kimliği izleyen hook. */
+function sessionArgs(o: CreateOptions, env: Record<string, string>): string[] {
+  const file = o.paneKey ? sessionFile(o.paneKey) : null;
+  if (!file) return [];
+  env.SUPERAGENT_SESSION_FILE = file;
+  if (!o.autoClaude || USER_PICKS_SESSION.test(o.claudeArgs)) return [];
+  let settings: string;
+  try {
+    settings = ensureHookSettings();
+  } catch {
+    return [];
+  }
+  const resume = isSessionId(o.resume) ? o.resume : null;
+  const id = resume ?? newSessionId();
+  writeSession(o.paneKey!, id);
+  return [resume ? '--resume' : '--session-id', id, '--settings', settings];
+}
+
+function quote(arg: string, shell: Shell): string {
+  if (/^[\w.:\\/-]+$/.test(arg)) return arg;
+  return shell === 'cmd' ? `"${arg}"` : `'${arg.replace(/'/g, "''")}'`;
+}
+
+function shellCommand(o: CreateOptions, extra: string[]): { file: string; args: string[] } {
+  const claude = ['claude', ...extra.map((a) => quote(a, o.shell)), o.claudeArgs.trim()].filter(Boolean).join(' ');
   switch (o.shell) {
     case 'cmd':
       return { file: 'cmd.exe', args: o.autoClaude ? ['/k', claude] : [] };

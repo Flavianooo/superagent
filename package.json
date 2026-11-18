@@ -8,7 +8,8 @@
         "start": "node scripts/build.mjs && electron .",
         "dev": "node scripts/build.mjs && electron .",
         "typecheck": "tsc",
-        "dist": "node scripts/build.mjs && electron-builder --win portable"
+        "dist": "node scripts/build.mjs && electron-builder --win nsis",
+        "dist:portable": "node scripts/build.mjs && electron-builder --win portable"
     },
     "keywords": [],
     "author": "",
@@ -39,10 +40,15 @@
             "output": "release"
         },
         "win": {
-            "target": "portable"
+            "target": "nsis"
         },
-        "portable": {
-            "artifactName": "SuperAgent.exe"
+        "nsis": {
+            "oneClick": true,
+            "perMachine": false,
+            "artifactName": "SuperAgent-Setup-${version}.exe",
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true,
+            "shortcutName": "SuperAgent"
         }
     }
 }

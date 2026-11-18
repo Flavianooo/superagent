@@ -12,7 +12,7 @@ interface Settings extends SpawnSettings {
 
 interface SavedState {
   layout: string;
-  panes: { name: string; cwd: string }[];
+  panes: { name: string; cwd: string; key?: string }[];
   recent: string[];
   settings: Settings;
 }
@@ -54,7 +54,7 @@ function save(): void {
   saveTimer = window.setTimeout(() => {
     const s: SavedState = {
       layout: layout.id,
-      panes: panes.map((p) => ({ name: p.name, cwd: p.cwd })),
+      panes: panes.map((p) => ({ name: p.name, cwd: p.cwd, key: p.key })),
       recent,
       settings,
     };
@@ -106,16 +106,19 @@ function setLayout(l: Layout): void {
 }
 
 // ---------- pane yönetimi ----------
-function spawnSettings(restoring = false): SpawnSettings {
-  const args = [settings.claudeArgs, restoring && settings.continueOnRestore ? '--continue' : '']
-    .filter(Boolean)
-    .join(' ');
-  return { shell: settings.shell, autoClaude: settings.autoClaude, claudeArgs: args };
+function spawnSettings(resume: string | null = null): SpawnSettings {
+  return { shell: settings.shell, autoClaude: settings.autoClaude, claudeArgs: settings.claudeArgs, resume };
 }
 
-function addPane(cwd: string, name?: string, restoring = false): Pane | null {
+interface Restore {
+  key: string;
+  resume: string | null;
+}
+
+function addPane(cwd: string, name?: string, restore?: Restore): Pane | null {
   if (panes.length >= 8) return null;
-  const p = new Pane(name ?? folderName(cwd), cwd, settings.fontSize, {
+  const restoring = !!restore;
+  const p = new Pane(name ?? folderName(cwd), cwd, restore?.key ?? crypto.randomUUID(), settings.fontSize, {
     onFocus: (x) => setFocus(x, false),
     onClose: closePane,
     onMaximize: toggleMax,
@@ -127,7 +130,7 @@ function addPane(cwd: string, name?: string, restoring = false): Pane | null {
   layout = layoutFor(panes.length, layout);
   maximized = null;
   render();
-  p.start(spawnSettings(restoring));
+  p.start(spawnSettings(restore?.resume ?? null));
   if (!restoring) {
     remember(cwd);
     setFocus(p);
@@ -142,6 +145,7 @@ function closePane(p: Pane): void {
   panes.splice(i, 1);
   byId.delete(p.id);
   p.dispose();
+  window.api.session.forget(p.key);
   if (maximized === p) maximized = null;
   if (focused === p) focused = panes[Math.min(i, panes.length - 1)] ?? null;
   render();
@@ -248,7 +252,7 @@ function openSettings(anchor: HTMLElement): void {
       </select></label>
     <label class="row chk"><input type="checkbox" name="autoClaude"> Yeni terminalde <code>claude</code>'u otomatik başlat</label>
     <label class="row"><span>claude argümanları</span><input type="text" name="claudeArgs" placeholder="ör. --model opus"></label>
-    <label class="row chk"><input type="checkbox" name="continueOnRestore"> Açılışta oturumları <code>--continue</code> ile sürdür</label>
+    <label class="row chk"><input type="checkbox" name="continueOnRestore"> Açılışta oturumları her pane kendi Claude oturumunu sürdürsün</label>
     <label class="row chk"><input type="checkbox" name="notifications"> Bitince / onay isteyince bildirim gönder</label>
     <label class="row"><span>Yazı boyutu</span><input type="number" name="fontSize" min="9" max="24"></label>
     <div class="hint">Kısayollar: Ctrl+1…8 pane seç · Ctrl+Shift+Enter büyüt · Ctrl+Shift+T yeni · Ctrl+Shift+W kapat · Ctrl+= / Ctrl+- yazı boyutu</div>`;
@@ -346,10 +350,18 @@ window.addEventListener(
     settings = { ...DEFAULTS, ...s.settings };
     recent = s.recent ?? [];
     layout = layoutById(s.layout);
-    for (const p of s.panes ?? []) {
-      const cwd = (await window.api.dirExists(p.cwd)) ? p.cwd : home;
-      addPane(cwd, p.name, true);
-    }
+    const saved = await Promise.all(
+      (s.panes ?? []).map(async (p) => ({
+        name: p.name,
+        cwd: (await window.api.dirExists(p.cwd)) ? p.cwd : home,
+        key: p.key ?? crypto.randomUUID(),
+      })),
+    );
+    // Her pane'in kendi oturum kimliği; iki pane asla aynı oturumu almaz.
+    const resumes = await window.api.session.resolve(saved.map(({ key, cwd }) => ({ key, cwd })));
+    saved.forEach((p, i) =>
+      addPane(p.cwd, p.name, { key: p.key, resume: settings.continueOnRestore ? resumes[i] : null }),
+    );
   }
   render();
   if (panes[0]) setFocus(panes[0]);
